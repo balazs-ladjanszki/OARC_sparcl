@@ -5,13 +5,13 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "dev": "vite --host --port 8080",
+    "dev": "vite --host --port 8085",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "start": "npm run dev",
     "build": "vite build",
     "build:docker": "docker build . -t sparcl",
     "start:docker": "docker run -p 8034:80 -d sparcl:latest",
-    "preview": "vite preview --port 8080",
+    "preview": "vite preview --port 8085",
     "test": "npx mocha --reporter spec 'test/**/*.js'"
   },
   "repository": {
@@ -80,6 +80,7 @@
     "ogl": "1.0.3",
     "peerjs": "^1.3.2",
     "perge": "^1.2.1",
+    "s2-geometry": "^1.2.10",
     "stompjs": "^2.3.3",
     "svelte-awesome-color-picker": "^3.0.4",
     "svelte-check": "^3.6.2",
