@@ -137,13 +137,14 @@
 
         const hitTestResults = frame.getHitTestResults(hitTestSource);
         if (hitTestResults.length > 0) {
-            if ($settings.localisation && !$parentState.isLocalized) {
-                parentInstance.onXrFrameUpdate(time, frame, floorPose);
-            } else {
+            //if ($settings.localisation && !$parentState.isLocalized) {
+                
+            //} else {
+            if ($parentState.isLocalized) {
                 $parentState.showFooter = ($settings.showstats || ($settings.localisation && !$parentState.isLocalisationDone)) as boolean;
                 if (reticle === null) {
                     reticle = tdEngine.addReticle();
-                    intervalId = setInterval(() => getPoints(reticle), 500);
+                    //intervalId = setInterval(() => getPoints(reticle), 500);
                 }
                 const reticlePose = hitTestResults[0].getPose(floorSpaceReference);
                 const position = reticlePose?.transform.position;
@@ -154,8 +155,7 @@
             }
         }
 
-        xrEngine.setViewportForView(floorPose.views[0]);
-        tdEngine.render(time, floorPose.views[0]);
+        parentInstance.onXrFrameUpdate(time, frame, floorPose);
     }
 
     /**
@@ -462,7 +462,7 @@
                     current_cell = new Cell(id);
                     cellMap.set(id, current_cell);
                 }
-
+                console.log("Recieved a block");
                 current_cell.addBlock(chosenBlock); //chosen_block will come from user interaction
                 current_cell.increaseHeight();
                 parentInstance.placeContent([[scr]]); // WARNING: wrap into an array
