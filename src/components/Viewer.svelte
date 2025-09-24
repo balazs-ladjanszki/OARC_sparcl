@@ -14,14 +14,9 @@
     import { createEventDispatcher, getContext, onDestroy } from 'svelte';
     import { writable, type Writable, get } from 'svelte/store';
     import { v4 as uuidv4 } from 'uuid';
-    import { debounce, type DebouncedFunc } from 'lodash';
+    import { debounce, type DebouncedFunction } from 'es-toolkit';
     import { sendRequest, validateRequest, GeoPoseRequest, type GeoposeResponseType, Sensor, Privacy, ImageOrientation, IMAGEFORMAT, CameraParam, CAMERAMODEL, SENSORTYPE } from '@oarc/gpp-access';
     import { getContentsAtLocation, type Geopose, type SCR } from '@oarc/scd-access';
-
-    import { myAgentName, myAgentId, myAgentColor } from '@src/stateStore';
-    import { PRIMITIVES } from '../core/engines/ogl/modelTemplates'; // just for drawing an agent
-    import { rgbToHex, normalizeColor } from '../core/common'; // just for drawing an agent
-
     import { handlePlaceholderDefinitions } from '@core/definitionHandlers';
     import { type SetupFunction, type XrFeature, type XrFrameUpdateCallbackType, type XrNoPoseCallbackType } from '../types/xr';
     import {
@@ -40,11 +35,16 @@
         selectedGeoPoseService,
         debug_overrideGeopose,
         debug_useOverrideGeopose,
+        myAgentName,
+        myAgentId,
+        myAgentColor,
     } from '@src/stateStore';
+    import { PRIMITIVES } from '../core/engines/ogl/modelTemplates'; // just for drawing an agent
+    import { rgbToHex, normalizeColor } from '@core/common'; // just for drawing an agent
     import { ARMODES, wait } from '@core/common';
     import { loadImageBase64, saveImageBase64, saveText } from '@core/devTools';
     import { getClosestH3Cells, upgradeGeoPoseStandard } from '@core/locationTools';
-    import { getSensorEstimatedGeoPose, lockScreenOrientation, startOrientationSensor, stopOrientationSensor, unlockScreenOrientation } from '@core/sensors';
+    import { getSensorEstimatedGeoPose, startOrientationSensor, stopOrientationSensor } from '@core/sensors';
     import ArMarkerOverlay from '@components/dom-overlays/ArMarkerOverlay.svelte';
     import type webxr from '../core/engines/webxr';
     import ogl from '../core/engines/ogl/ogl';
@@ -69,7 +69,7 @@
     let experienceLoaded = false;
     let experienceMatrix: Mat4 | null = null;
     let firstPoseReceived = false;
-    let poseFoundHeartbeat: DebouncedFunc<() => boolean> | undefined = undefined;
+    let poseFoundHeartbeat: DebouncedFunction<() => boolean> | undefined = undefined;
 
     let currentGeoPose: Geopose | undefined;
     let contentQueryInterval: NodeJS.Timer | undefined;
@@ -148,25 +148,19 @@
             options.domOverlay = { root: overlay };
         }
 
-        let promise = xrEngine.startSession(canvas, xrFrameUpdateCallback, options, setup);
-
-        // NOTE: screen orientation cannot be changed between user click and WebXR startSession,
-        // and it cannot be changed after the XR Session started, so the only place to change it is here
-        if ($debug_useGeolocationSensors) {
-            lockScreenOrientation('landscape-primary');
-            startOrientationSensor();
+        try {
+            await xrEngine.startSession(canvas, xrFrameUpdateCallback, options, setup);
+        } catch (error) {
+            unableToStartSession = true;
+            message('WebXR Immersive AR failed to start: ' + error);
+            return;
         }
 
-        if (promise) {
-            promise
-                .then(() => {
-                    xrEngine.setCallbacks(xrSessionEndedCallback, xrNoPoseCallback);
-                    tdEngine.init();
-                })
-                .catch((error) => {
-                    unableToStartSession = true;
-                    message('WebXR Immersive AR failed to start: ' + error);
-                });
+        xrEngine.setCallbacks(xrSessionEndedCallback, xrNoPoseCallback);
+        tdEngine.init();
+
+        if ($debug_useGeolocationSensors) {
+            startOrientationSensor();
         }
     }
 
@@ -310,28 +304,21 @@
     }
 
     async function retrieveAndPlaceContents(queryGeoPose: Geopose | undefined) {
-        if ($recentLocalisation.geopose?.position !== undefined) {
-            console.log('Looking for contents in H3 cell');
-            if (!queryGeoPose) {
-                console.log('No Geopose');
-                console.log(queryGeoPose);
-                return;
+        if (!queryGeoPose) {
+            return;
+        }
+        const h3Indices = getClosestH3Cells(queryGeoPose.position.lat, queryGeoPose.position.lon);
+        for (const h3Index of h3Indices) {
+            // skip already loaded h3 indices
+            // NOTE: disable to support dynamically created contents
+            if (loadedH3Indices.includes(h3Index)) {
+                continue;
+            } else {
+                loadedH3Indices.push(h3Index);
             }
-            const h3Indices = getClosestH3Cells(queryGeoPose.position.lat, queryGeoPose.position.lon);
-            for (const h3Index of h3Indices) {
-                // skip already loaded h3 indices
-                // NOTE: disable to support dynamically created contents
-                if (loadedH3Indices.includes(h3Index)) {
-                    console.log('Already found H3');
-                    continue;
-                } else {
-                    loadedH3Indices.push(h3Index);
-                    console.log('New h3 index', h3Index);
-                }
-                const scrs = await getContentsInH3Cell(h3Index, kDefaultOscpScdTopic);
-                console.log(scrs);
-                placeContent(scrs);
-            }
+            console.log('New h3 index', h3Index);
+            const scrs = await getContentsInH3Cell(h3Index, kDefaultOscpScdTopic);
+            placeContent(scrs);
         }
     }
 
@@ -342,7 +329,6 @@
         firstPoseReceived = false;
         if ($debug_useGeolocationSensors) {
             stopOrientationSensor();
-            unlockScreenOrientation();
         }
         clearInterval(contentQueryInterval);
         dispatch('arSessionEnded');
@@ -438,13 +424,13 @@
             //TODO: add width and height into CameraParams (too)
             const geoPoseRequest = new GeoPoseRequest(uuidv4())
                 .addSensor(new Sensor('gps', SENSORTYPE.geolocation))
-                .addGeoLocationData($initialLocation.lat, $initialLocation.lon, 0, 0, 0, 0, 0, new Date().getTime(), 'gps', new Privacy());
+                .addGeoLocationData($initialLocation.lat, $initialLocation.lon, 0, 0, 0, 0, 0, Date.now(), 'gps', new Privacy());
 
             console.log(JSON.stringify(geoPoseRequest));
 
             geoPoseRequest
                 .addSensor(new Sensor('cam', SENSORTYPE.camera))
-                .addCameraData(IMAGEFORMAT.JPG, [width, height], image.split(',')[1], 0, new ImageOrientation(false, 0), cameraParams, new Date().getTime(), 'cam', new Privacy());
+                .addCameraData(IMAGEFORMAT.JPG, [width, height], image.split(',')[1], 0, new ImageOrientation(false, 0), cameraParams, Date.now(), 'cam', new Privacy());
 
             // Services haven't implemented recent changes to the protocol yet
             validateRequest(false);
@@ -722,7 +708,7 @@
 
                     case 'POI': {
                         if (!$debug_enableOGCPoIContents) {
-                            console.log('An POI content was received but this type is disabled');
+                            console.log('A POI content was received but this type is disabled');
                             break;
                         }
                         const url = record.content.refs ? record.content.refs[0].url : '';

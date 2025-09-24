@@ -33,14 +33,17 @@
             //    settings = import('@experiments/<subroot>/<experimentname>/Settings.svelte')
             //    viewer = import('@experiments/<subroot>/<experimentname>/Viewer.svelte');
             //    break;
+
             case 'searchbytext':
                 settings = import('@experiments/oarc/searchbytext/Settings.svelte')
                 viewer = import('@experiments/oarc/searchbytext/Viewer.svelte');
                 break;
+
             case 'minecraft':
                 settings = import('@experiments/oarc/minecraft/Settings.svelte')
                 viewer = import('@experiments/oarc/minecraft/Viewer.svelte');
                 break;
+
             case 'ismar2021signpost':
                 settings = import('@experiments/oarc/ismar2021signpost/Settings.svelte');
                 viewer = import('@experiments/oarc/ismar2021signpost/Viewer.svelte');
@@ -50,10 +53,12 @@
                 settings = import('@experiments/oarc/ismar2021multi/Settings.svelte');
                 viewer = import('@experiments/oarc/ismar2021multi/Viewer.svelte');
                 break;
+
             case 'performance':
                 settings = import('@experiments/oarc/performance/Settings.svelte');
                 viewer = import('@experiments/oarc/performance/Viewer.svelte');
                 break;
+
             default:
                 settings = null;
                 viewer = null;

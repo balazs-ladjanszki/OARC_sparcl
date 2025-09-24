@@ -12,13 +12,10 @@
 -->
 <script lang="ts">
     import { createEventDispatcher, onDestroy } from 'svelte';
-    import { debounce, type DebouncedFunc } from 'lodash';
+    import { debounce, type DebouncedFunction } from 'es-toolkit';
     import { Mesh, Quat, Vec3 } from 'ogl';
 
-    import {
-        currentMarkerImage,
-        currentMarkerImageWidth,
-    } from '@src/stateStore';
+    import { currentMarkerImage, currentMarkerImageWidth } from '@src/stateStore';
 
     import ArMarkerOverlay from '@components/dom-overlays/ArMarkerOverlay.svelte';
     import { wait } from '@core/common';
@@ -40,7 +37,7 @@
     let unableToStartSession = false;
 
     let trackedImageObject: Mesh;
-    let poseFoundHeartbeat: DebouncedFunc<() => boolean> | undefined;
+    let poseFoundHeartbeat: DebouncedFunction<() => boolean> | undefined;
 
     const message = (msg: string) => console.log(msg);
 
@@ -79,22 +76,17 @@
                 },
             ],
         };
-        const promise = xrEngine.startMarkerSession(canvas, onXrMarkerFrameUpdateCallback, options);
 
-        if (promise) {
-            promise
-                .then(() => {
-                    xrEngine.setCallbacks(onXrSessionEnded, onXrNoPose);
-                    tdEngine.init();
-                })
-                .catch((error: any) => {
-                    unableToStartSession = true;
-                    message('WebXR Immersive AR failed to start: ' + error);
-                });
-        } else {
-            message('AR session was started with unknown mode');
-            throw new Error('AR session was started with unknown mode');
+        try {
+            await xrEngine.startMarkerSession(canvas, onXrMarkerFrameUpdateCallback, options);
+        } catch (error) {
+            unableToStartSession = true;
+            message('WebXR Immersive AR failed to start: ' + error);
+            return;
         }
+
+        xrEngine.setCallbacks(onXrSessionEnded, onXrNoPose);
+        tdEngine.init();
     }
 
     onDestroy(() => {
@@ -162,7 +154,8 @@
         handlePoseHeartbeat();
 
         showFooter = false;
-        if (trackedImage && trackedImage.trackingState === 'tracked') { // TODO: use XRImageTrackingState.tracked
+        if (trackedImage && trackedImage.trackingState === 'tracked') {
+            // TODO: use XRImageTrackingState.tracked
             if (!trackedImageObject) {
                 trackedImageObject = tdEngine.addMarkerObject();
             }
@@ -188,13 +181,12 @@
         console.log('Viewer-Marker: Unknown event received:');
         console.log(events);
     }
-
 </script>
 
 <canvas id="application" bind:this={canvas}></canvas>
 
 <aside bind:this={overlay} on:beforexrselect={(event) => event.preventDefault()}>
-    <iframe title='externalcontentiframe' class:hidden={!experienceLoaded} bind:this={externalContent} src=""></iframe>
+    <iframe title="externalcontentiframe" class:hidden={!experienceLoaded} bind:this={externalContent} src=""></iframe>
     <img id="experienceclose" class:hidden={!experienceLoaded} alt="close button" src="/media/close-cross.svg" bind:this={closeExperience} />
 
     <!--  Space for UI elements  -->
