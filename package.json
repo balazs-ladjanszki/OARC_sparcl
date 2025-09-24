@@ -5,13 +5,13 @@
     "type": "module",
     "main": "src/index.js",
     "scripts": {
-        "dev": "vite --host --port 8080",
+        "dev": "vite --host --port 8085",
         "check": "svelte-check --tsconfig ./tsconfig.json",
         "start": "npm run dev",
         "build": "vite build",
         "build:docker": "docker build . -t sparcl",
         "start:docker": "docker run -p 8034:80 -d sparcl:latest",
-        "preview": "vite preview --port 8080",
+        "preview": "vite preview --port 8085",
         "test": "npx mocha --reporter spec 'test/**/*.js'",
         "lint": "eslint .",
         "format": "prettier --write ."

@@ -303,7 +303,7 @@
         onLocalizationSuccess(floorPose, cameraGeoPose);
 
         // now get the contents from the SCD(s)
-        retrieveAndPlaceContents(currentGeoPose);
+        await retrieveAndPlaceContents(currentGeoPose);
         // and repeat periodically
         contentQueryInterval = setInterval(async () => {
             retrieveAndPlaceContents(currentGeoPose);
@@ -364,7 +364,7 @@ async function retrieveAndPlaceContents(queryGeoPose: Geopose | undefined) {
         $context.isLocalisationDone = false;
         $recentLocalisation.geopose = {};
         $recentLocalisation.floorpose = {};
-        $context.showFooter = true;
+        $context.showFooter = false;
 
         // clear content querying context
         clearInterval(contentQueryInterval);
@@ -503,10 +503,10 @@ async function retrieveAndPlaceContents(queryGeoPose: Geopose | undefined) {
                     .then((data) => {
                         $context.isLocalizing = false;
                         $context.isLocalized = true;
-                        wait(4000).then(() => {
+                        //wait(4000).then(() => {
                             $context.showFooter = false;
                             $context.isLocalisationDone = true;
-                        });
+                        //});
 
                         console.log('GPP response:');
                         console.log(JSON.stringify(data));
@@ -564,7 +564,7 @@ async function retrieveAndPlaceContents(queryGeoPose: Geopose | undefined) {
      *  Places the contents provided by Spacial Content Discovery providers.
      * @param scrs  [[SCR]]      Content Records with the result from the selected content services (array of array of SCRs. One array of SCRs by content provider)
      */
-    export function placeContent(scrs: SCR[][]) {
+    export async function placeContent(scrs: SCR[][]) {
         let showContentsLog = false;
         scrs.forEach((response) => {
             //console.log('Number of content items received: ', response.length);
@@ -990,7 +990,7 @@ async function retrieveAndPlaceContents(queryGeoPose: Geopose | undefined) {
     <img id="experienceclose" class:hidden={!experienceLoaded} alt="close button" src="/media/close-cross.svg" bind:this={externalContentCloseButton} />
 
     <!--  Space for UI elements -->
-    {#if $context.showFooter || true}
+    {#if $context.showFooter}
         <!-- always show footer now for demo purposes -->
         <footer>
             {#if unableToStartSession}

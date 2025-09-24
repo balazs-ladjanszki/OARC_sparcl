@@ -4,7 +4,7 @@
 
     import { setContext } from 'svelte';
     import { get, writable, type Writable } from 'svelte/store';
-    import { peerIdStr,  recentLocalisation } from '../../../stateStore';
+    import { peerIdStr, recentLocalisation } from '../../../stateStore';
     import { Vec3, Quat, type Transform } from 'ogl';
     import { createEventDispatcher } from 'svelte';
 
@@ -29,12 +29,10 @@
     let tdEngine: ogl;
     let settings: Writable<Record<string, unknown>> = writable({});
     let reticle: Transform | null = null; // TODO: Mesh instead of Transform
-    let experimentIntervalId: ReturnType<typeof setInterval> | undefined;
-    let doExperimentAutoPlacement = false;
     let hitTestSource: XRHitTestSource | undefined;
     let minecraftOverlay: MinecraftOverlay;
     let parentState = writable<{ hasLostTracking: boolean; isLocalized: boolean; localisation: boolean; isLocalisationDone: boolean; showFooter: boolean }>();
-    let intervalId: any
+    let intervalId: any;
     let log: Block;
     let grass: Block;
     //let plank: Block;
@@ -42,11 +40,11 @@
     let stone: Block;
     let cobblestone: Block;
     let chosenBlock: Block;
-    let models : any[] = [];
+    let models: any[] = [];
     let previousID = 0;
-    
+
     const dispatch = createEventDispatcher<{ broadcast: { event: string; value: any; routing_key?: string } }>();
-    
+
     setContext('state', parentState);
 
     $: {
@@ -90,7 +88,6 @@
         startSession();
         initializeBlocks();
         //intervalId = setInterval(() => getPoints(reticle), 500);
-        
     }
 
     /**
@@ -138,7 +135,7 @@
         const hitTestResults = frame.getHitTestResults(hitTestSource);
         if (hitTestResults.length > 0) {
             //if ($settings.localisation && !$parentState.isLocalized) {
-                
+
             //} else {
             if ($parentState.isLocalized) {
                 $parentState.showFooter = ($settings.showstats || ($settings.localisation && !$parentState.isLocalisationDone)) as boolean;
@@ -162,14 +159,10 @@
      * Let's the app know that the XRSession was closed.
      */
     function onXrSessionEnded() {
-        parentInstance.onXrSessionEnded();
+        console.log('Minecraft.onXrSessionEnded');
         if (hitTestSource != undefined) {
             hitTestSource.cancel();
             hitTestSource = undefined;
-        }
-        if (experimentIntervalId) {
-            clearInterval(experimentIntervalId);
-            experimentIntervalId = undefined;
         }
         parentInstance.onXrSessionEnded();
     }
@@ -194,7 +187,7 @@
         private timestamp: Date;
 
         constructor(url: string, type: string, id: number, author: string, timestamp: Date) {
-            (this.url = url), (this.type = type), (this.id = id), (this.author = author), (this.timestamp = timestamp);
+            ((this.url = url), (this.type = type), (this.id = id), (this.author = author), (this.timestamp = timestamp));
         }
 
         getUrl(): string {
@@ -252,7 +245,7 @@
         // Find the cell with the id
         let current_cell: any = cellMap.get(id);
 
-        let cellHeight = 0
+        let cellHeight = 0;
         if (current_cell) {
             cellHeight = current_cell.getHeight();
         }
@@ -265,7 +258,7 @@
         let cellLongitude = latlng.lng;
         let height = (0.5 / 2 ** dimension) * cellHeight;
         let currenttime = new Date().getTime();
-        let scr = CreateSCR(cellLatitude, cellLongitude, height, block.getUrl(), id.toString() + "_" + currenttime.toString());
+        let scr = CreateSCR(cellLatitude, cellLongitude, height, block.getUrl(), id.toString() + '_' + currenttime.toString());
         let size = 1 / 2 ** dimension;
 
         const message_body = {
@@ -308,15 +301,6 @@
     /**
      * Toggle automatic placement of placeholders for experiment mode.
      */
-    function toggleExperimentalPlacement() {
-        doExperimentAutoPlacement = !doExperimentAutoPlacement;
-
-        if (doExperimentAutoPlacement) {
-            experimentIntervalId = setInterval(() => experimentTapHandler(), 1000);
-        } else {
-            clearInterval(experimentIntervalId);
-        }
-    }
     //takes in the longitude as rotation angle on the up axis and turns it into quaternions
     function toQuaternion(longitude: number): any {
         const cr: number = Math.cos(0 * 0.5);
@@ -336,7 +320,6 @@
 
     // NOTE: this won't actually write into the database, it just creates an SCR locally
     function CreateSCR(latitude: number, longitude: number, height: number, url: string, id: String): any {
-
         const quat = toQuaternion(-1 * longitude);
 
         const geoPose = {
@@ -419,7 +402,7 @@
         S2_LEVEL = S2BaseLevel + dimension;*/
     }
 
-    export function onNetworkEvent(events: any,) {
+    export function onNetworkEvent(events: any) {
         if (!('message_broadcasted' in events) && !('object_created' in events)) {
             console.log('Minecraft viewer: Unknown event received:');
             console.log(events);
@@ -447,7 +430,8 @@
             const data = events.object_created;
             //if (data.sender != $peerIdStr) { // ignore own messages which are also delivered
             const scr = data.scr;
-            if ('tenant' in scr && scr.tenant === 'minecraft_experiment') {
+            console.log(scr);
+            if (scr && 'tenant' in scr && scr.tenant === 'minecraft_experiment') {
                 console.log(scr);
                 //console.log(scr.content.geoPose.position.lat, "got the data through peertopeer");
                 let key = S2.latLngToKey(scr.content.geopose.position.lat, scr.content.geopose.position.lon, 24);
@@ -462,7 +446,7 @@
                     current_cell = new Cell(id);
                     cellMap.set(id, current_cell);
                 }
-                console.log("Recieved a block");
+                console.log('Recieved a block');
                 current_cell.addBlock(chosenBlock); //chosen_block will come from user interaction
                 current_cell.increaseHeight();
                 parentInstance.placeContent([[scr]]); // WARNING: wrap into an array
@@ -471,95 +455,88 @@
         }
     }
 
-    function getPoints(reticle: any){
+    async function getPoints(reticle: any) {
+        const globalObjectPose = tdEngine.convertLocalPoseToGeoPose(reticle.position, reticle.quaternion);
+        const latitude = globalObjectPose.position.lat;
+        const longitude = globalObjectPose.position.lon;
 
-    const globalObjectPose = tdEngine.convertLocalPoseToGeoPose(reticle.position, reticle.quaternion);
-    const latitude = globalObjectPose.position.lat;
-    const longitude = globalObjectPose.position.lon;
+        let key = S2.latLngToKey(latitude, longitude, S2_LEVEL);
+        let id = S2.keyToId(key);
+        if (id != previousID) {
+            previousID = id;
+            const latlng = S2.idToLatLng(id);
+            let cellLatitude = latlng.lat;
+            let cellLongitude = latlng.lng;
 
-    let key = S2.latLngToKey(latitude, longitude, S2_LEVEL);
-    let id = S2.keyToId(key);
-    if(id != previousID){
-    previousID = id;
-    const latlng = S2.idToLatLng(id);
-    let cellLatitude = latlng.lat;
-    let cellLongitude = latlng.lng;
-    
-    if(models.length > 0){
-        models.forEach(function(element){
-            tdEngine.remove(element);
-        });
-    }
-
-    models = [];
-
-
-    const url = 'https://esoptron.hu:8042/getPoints?lat=' + cellLatitude + '&lon=' + cellLongitude + '&lvl=24'
-
-    if ($parentState.hasLostTracking == false && reticle != null) {
-        if ($parentState.isLocalisationDone) {
-            fetch(url)
-            .then(response => {
-            if (!response.ok) {
-                throw new Error(`API request failed with status ${response.status}`);
+            if (models.length > 0) {
+                models.forEach(function (element) {
+                    tdEngine.remove(element);
+                });
             }
-            return response.json();
-    })
-    .then(data => {
 
+            models = [];
 
-      let v0 = {
-        lat: data.v0lat,
-        lon: data.v0lon
-      }
-      let v1 = {
-        lat: data.v1lat,
-        lon: data.v1lon
-      }
-      let v2 = {
-        lat: data.v2lat,
-        lon: data.v2lon
-      }
-      let v3 = {
-        lat: data.v3lat,
-        lon: data.v3lon
-      }
+            const url = 'https://esoptron.hu:8042/getPoints?lat=' + cellLatitude + '&lon=' + cellLongitude + '&lvl=24';
 
-      let points = [v0, v1, v2, v3]
+            if ($parentState.hasLostTracking == false && reticle != null) {
+                if ($parentState.isLocalisationDone) {
+                    fetch(url)
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(`API request failed with status ${response.status}`);
+                            }
+                            return response.json();
+                        })
+                        .then((data) => {
+                            let v0 = {
+                                lat: data.v0lat,
+                                lon: data.v0lon,
+                            };
+                            let v1 = {
+                                lat: data.v1lat,
+                                lon: data.v1lon,
+                            };
+                            let v2 = {
+                                lat: data.v2lat,
+                                lon: data.v2lon,
+                            };
+                            let v3 = {
+                                lat: data.v3lat,
+                                lon: data.v3lon,
+                            };
 
-      points.forEach(function(element){
-        let quat = toQuaternion(-1 * element.lon);
+                            let points = [v0, v1, v2, v3];
 
-        let globalpose = {
-            position: {
-                lat: element.lat,
-                lon: element.lon,
-                h: 0,
-            },
-            quaternion: {
-                x: quat.qX,
-                y: quat.qY,
-                z: quat.qZ,
-                w: quat.qW,
-            },
-        };
+                            points.forEach(function (element) {
+                                let quat = toQuaternion(-1 * element.lon);
 
-        const localpose = tdEngine.convertGeoPoseToLocalPose(globalpose);
+                                let globalpose = {
+                                    position: {
+                                        lat: element.lat,
+                                        lon: element.lon,
+                                        h: 0,
+                                    },
+                                    quaternion: {
+                                        x: quat.qX,
+                                        y: quat.qY,
+                                        z: quat.qZ,
+                                        w: quat.qW,
+                                    },
+                                };
 
-        let model = tdEngine.addModel(chosenBlock.getUrl(), localpose.position, localpose.quaternion, new Vec3(0.1, 0.1, 0.1));
-        models.push(model);
+                                const localpose = tdEngine.convertGeoPoseToLocalPose(globalpose);
 
-      });
-
-    })
-    .catch(error => {
-      console.error("Error:", error);
-    });
-}
-}
-}
+                                let model = tdEngine.addModel(chosenBlock.getUrl(), localpose.position, localpose.quaternion, new Vec3(0.1, 0.1, 0.1));
+                                models.push(model);
+                            });
+                        })
+                        .catch((error) => {
+                            console.error('Error:', error);
+                        });
+                }
+            }
+        }
     }
-
 </script>
 
 <Parent bind:this={parentInstance} on:arSessionEnded>
