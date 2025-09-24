@@ -29,11 +29,13 @@ export class PeerjsNetworkAdapter extends EventEmitter<NetworkAdapterEvents> imp
             this.emit('ready', { network: this });
         });
         this.peer.on('close', () => {
+            console.log(`Connection to the PeerServer closed.`);
             p2pNetworkState.set('not connected');
         });
         this.peer.on('connection', (connection) => {
             this.connections.push(connection);
             connection.on('open', () => {
+                console.log(`Connection to peer ${connection.peer} established.`);
                 connection.send({
                     senderId: this.peerId,
                     type: 'welcome',
@@ -41,11 +43,13 @@ export class PeerjsNetworkAdapter extends EventEmitter<NetworkAdapterEvents> imp
                 });
                 connection.on('data', (data) => {
                     this.handleMessage(data as BroadcastChannelMessage);
+                    //console.log(`Received data from ${connection.peer}: ${data}`);
                 });
                 connection.on('close', () => {
                     const connectionIndex = this.connections.findIndex((conn) => conn.label === connection.label);
                     if (connectionIndex !== -1) {
                         this.connections.splice(connectionIndex, 1);
+                        console.log(`Connection to peer ${connection.peer} closed.`);
                     }
                 });
             });
@@ -84,7 +88,7 @@ export class PeerjsNetworkAdapter extends EventEmitter<NetworkAdapterEvents> imp
                 if (!('data' in message)) {
                     this.emit('message', message);
                 } else {
-                    const data = message.data as ArrayBufferLike;
+                    const data = message.data as Uint8Array<ArrayBufferLike>;
                     this.emit('message', {
                         ...message,
                         data: new Uint8Array(data),
@@ -113,18 +117,21 @@ export class PeerjsNetworkAdapter extends EventEmitter<NetworkAdapterEvents> imp
                 if (connection) {
                     this.connections.push(connection);
                     connection.on('open', () => {
+                        console.log(`Connection to peer ${connection.peer} established.`);
                         connection.send({
                             senderId: this.peerId,
                             type: 'arrive',
                             peerMetadata: this.peerMetadata,
                         });
                         connection.on('data', (data) => {
+                            //console.log(`Received data from ${connection.peer}: ${data}`);
                             this.handleMessage(data as BroadcastChannelMessage);
                         });
                         connection.on('close', () => {
                             const connectionIndex = this.connections.findIndex((conn) => conn.label === connection.label);
                             if (connectionIndex !== -1) {
                                 this.connections.splice(connectionIndex, 1);
+                                console.log(`Connection to peer ${connection.peer} closed.`);
                             }
                         });
                     });

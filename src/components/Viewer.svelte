@@ -38,6 +38,8 @@
         myAgentName,
         myAgentId,
         myAgentColor,
+        enableCameraPoseSharing,
+        showOtherCameras,
     } from '@src/stateStore';
     import { PRIMITIVES } from '../core/engines/ogl/modelTemplates'; // just for drawing an agent
     import { rgbToHex, normalizeColor } from '@core/common'; // just for drawing an agent
@@ -53,7 +55,14 @@
     import { subscribeToSensor } from '@src/core/rmqnetwork';
 
     // Used to dispatch events to parent
-    const dispatch = createEventDispatcher();
+    const dispatch = createEventDispatcher<{
+        arSessionEnded: undefined;
+        broadcast: {
+            event: string;
+            value?: any;
+            routing_key?: string;
+        };
+    }>();
 
     const message = (msg: string) => console.log(msg);
 
@@ -72,7 +81,7 @@
     let poseFoundHeartbeat: DebouncedFunction<() => boolean> | undefined = undefined;
 
     let currentGeoPose: Geopose | undefined;
-    let contentQueryInterval: NodeJS.Timer | undefined;
+    let contentQueryInterval: NodeJS.Timeout | undefined = undefined;
     let loadedH3Indices: string[] = [];
 
     // spatial contents are organized into topics.
@@ -97,12 +106,6 @@
         isLocalizing: false, // while waiting for GeoPose service localization
         isLocalisationDone: false, // whether to show the dom-overlay with 'localize' button
         receivedContentTitles: [],
-    });
-
-    onDestroy(() => {
-        tdEngine.stop();
-        $recentLocalisation.geopose = {};
-        $recentLocalisation.floorpose = {};
     });
 
     /**
@@ -274,28 +277,32 @@
             updateSensorVisualization();
 
             // optionally share the camera pose with other players
-            if ($recentLocalisation.geopose?.position !== undefined) {
-                try {
-                    shareCameraPose(floorPose);
-                    const localPos = new Vec3(floorPose.transform.position.x, floorPose.transform.position.y, floorPose.transform.position.z);
-                    const localQuat = new Quat(floorPose.transform.orientation.x, floorPose.transform.orientation.y, floorPose.transform.orientation.z, floorPose.transform.orientation.w);
-                    currentGeoPose = tdEngine.convertCameraLocalPoseToGeoPose(localPos, localQuat);
-                } catch (error) {
-                    // do nothing. we can expect some exceptions because the pose conversion is not yet possible in the first few frames.
+            if ($recentLocalisation.geopose?.position != undefined && $recentLocalisation.floorpose?.transform?.position != undefined) {
+                const localPos = new Vec3(floorPose.transform.position.x, floorPose.transform.position.y, floorPose.transform.position.z);
+                const localQuat = new Quat(floorPose.transform.orientation.x, floorPose.transform.orientation.y, floorPose.transform.orientation.z, floorPose.transform.orientation.w);
+                currentGeoPose = tdEngine.convertCameraLocalPoseToGeoPose(localPos, localQuat);
+                if ($enableCameraPoseSharing) {
+                    try {
+                        shareCameraPose(floorPose);
+                    } catch (error) {
+                        // do nothing. we can expect some exceptions because the pose conversion is not yet possible in the first few frames.
+                    }
                 }
             }
-
             tdEngine.render(time, view);
         }
     }
 
     async function doLocalization({ floorPose, getGeopose }: { floorPose: XRViewerPose; getGeopose: () => Promise<{ cameraGeoPose: GeoposeResponseType['geopose']; optionalScrs?: SCR[] }> }) {
+        console.log('doLocalization');
+
+        // wait for the localization result, whichever method it comes from
         const { cameraGeoPose } = await getGeopose();
         $recentLocalisation.geopose = cameraGeoPose;
         $recentLocalisation.floorpose = floorPose;
         onLocalizationSuccess(floorPose, cameraGeoPose);
 
-        // retrieve now
+        // now get the contents from the SCD(s)
         retrieveAndPlaceContents(currentGeoPose);
         // and repeat periodically
         contentQueryInterval = setInterval(async () => {
@@ -304,14 +311,16 @@
     }
 
     async function retrieveAndPlaceContents(queryGeoPose: Geopose | undefined) {
-        if (!queryGeoPose) {
-            return;
-        }
-        const h3Indices = getClosestH3Cells(queryGeoPose.position.lat, queryGeoPose.position.lon);
-        for (const h3Index of h3Indices) {
-            // skip already loaded h3 indices
-            // NOTE: disable to support dynamically created contents
-            if (loadedH3Indices.includes(h3Index)) {
+        if ($recentLocalisation.geopose?.position !== undefined) {
+            console.log('Looking for contents in H3 cell');
+            if (!queryGeoPose) {
+                console.log('No Geopose');
+                console.log(queryGeoPose);
+                return;
+            }
+            const h3Indices = getClosestH3Cells(queryGeoPose.position.lat, queryGeoPose.position.lon);
+            for (const h3Index of h3Indices) {
+                // skip already loaded h3 indices
                 continue;
             } else {
                 loadedH3Indices.push(h3Index);
@@ -323,29 +332,82 @@
     }
 
     /**
-     * Let's the app know that the XRSession was closed.
-     */
-    export function onXrSessionEnded() {
-        firstPoseReceived = false;
-        if ($debug_useGeolocationSensors) {
-            stopOrientationSensor();
-        }
-        clearInterval(contentQueryInterval);
-        dispatch('arSessionEnded');
-    }
-
-    /**
      * Called when no pose was reported from WebXR.
      *
      * @param time time offset at which the updated
      *      viewer state was received from the WebXR device.
      * @param frame The XRFrame provided to the update loop
      * @param floorPose The pose of the device as reported by the XRFrame
-     */
     export function onXrNoPose(time: DOMHighResTimeStamp, frame: XRFrame, floorPose: XRViewerPose) {
         $context.hasLostTracking = true;
         tdEngine.render(time, floorPose.views[0]);
     }
+
+    /**
+     * Let's the app know that the XRSession was closed.
+     */
+    export function onXrSessionEnded() {
+        console.log('Viewer.onXrSessionEnded');
+
+        // stop sensors if used
+        if ($debug_useGeolocationSensors) {
+            stopOrientationSensor();
+        }
+
+        // clear tracking context
+        firstPoseReceived = false;
+
+        // clear localization context
+        $context.isLocalized = false;
+        $context.isLocalizing = false;
+        $context.isLocalisationDone = false;
+        $recentLocalisation.geopose = {};
+        $recentLocalisation.floorpose = {};
+        $context.showFooter = true;
+
+        // clear content querying context
+        clearInterval(contentQueryInterval);
+        $receivedScrs = [];
+        $context.receivedContentTitles = [];
+        loadedH3Indices = [];
+
+        // clear rendering context
+        tdEngine.cleanup();
+
+        // broadcast event to parent
+        dispatch('arSessionEnded');
+    }
+
+    /**
+     * Show UI for localization again.
+     */
+    export function relocalize() {
+        console.log('Viewer.relocalize');
+
+        // clear localization context
+        $context.isLocalized = false;
+        $context.isLocalizing = false;
+        $context.isLocalisationDone = false;
+        $recentLocalisation.geopose = {};
+        $recentLocalisation.floorpose = {};
+        $context.showFooter = true;
+
+        // clear content querying context
+        clearInterval(contentQueryInterval);
+        $receivedScrs = [];
+        $context.receivedContentTitles = [];
+        loadedH3Indices = [];
+
+        // clear rendering context
+        tdEngine.reinitialize();
+    }
+
+    onDestroy(() => {
+        console.log('Viewer.onDestroy');
+
+        // stop rendering engine
+        tdEngine.stop();
+    });
 
     /**
      * Trigger localisation of the device globally using a GeoPose service.
@@ -425,7 +487,7 @@
             const geoPoseRequest = new GeoPoseRequest(uuidv4())
                 .addSensor(new Sensor('gps', SENSORTYPE.geolocation))
                 .addGeoLocationData($initialLocation.lat, $initialLocation.lon, 0, 0, 0, 0, 0, Date.now(), 'gps', new Privacy());
-
+            console.log('GPP request:');
             console.log(JSON.stringify(geoPoseRequest));
 
             geoPoseRequest
@@ -445,13 +507,13 @@
                             $context.isLocalisationDone = true;
                         });
 
-                        console.log('GPP response:', data);
-                        console.log(data);
+                        console.log('GPP response:');
+                        console.log(JSON.stringify(data));
 
                         // GeoPoseResp
                         // https://github.com/OpenArCloud/oscp-geopose-protocol
                         let cameraGeoPose = null;
-                        // NOTE: AugmentedCity also can also return neighboring objects in the GPP response
+                        // NOTE: AugmentedCity can also return neighboring objects in the GPP response
                         let optionalScrs: SCR[] = [];
                         if (data.geopose != undefined && (data as any).scrs != undefined && (data.geopose as any).geopose != undefined) {
                             // data is AugmentedCity format which contains other entries too
@@ -469,9 +531,6 @@
                             throw errorMessage;
                         }
 
-                        console.log('IMAGE GeoPose:');
-                        console.log(cameraGeoPose);
-
                         resolve({ cameraGeoPose, optionalScrs });
                     })
                     .catch((error) => {
@@ -482,27 +541,6 @@
                     });
             }
         });
-    }
-
-    /**
-     * Show ui for localisation again.
-     */
-    export function relocalize() {
-        clearInterval(contentQueryInterval);
-
-        $context.isLocalized = false;
-        $context.isLocalizing = false;
-        $context.isLocalisationDone = false;
-        $recentLocalisation.geopose = {};
-        $recentLocalisation.floorpose = {};
-
-        $receivedScrs = [];
-        $context.receivedContentTitles = [];
-        loadedH3Indices = [];
-
-        tdEngine.clearScene(); // TODO: we should store the reticle inside tdEngine to avoid the need for explicit deletion here.
-
-        $context.showFooter = true;
     }
 
     /**
@@ -536,10 +574,18 @@
                 }
                 // TODO: validate here whether we received a proper SCR
                 // TODO: we can check here whether we have received this content already and break if yes.
+
+                // DEBUG
+                //console.log("Content");
+                //console.log(" -id: " + record.content.id);
+                //console.log(" -type: " + record.content.type);
+
                 // TODO: first save the records and then start to instantiate the objects
-                $receivedScrs.push(record);
-                $context.receivedContentTitles.push(record.content.title);
-                console.log('New content: ', record.content.title);
+                if (record.content.type === 'placeholder' || record.content.type === '3D' || record.content.type === 'MODEL_3D' || record.content.type === 'ICON') {
+                    // only list the 3D models and not ephemeral objects nor stream objects
+                    $receivedScrs.push(record);
+                    $context.receivedContentTitles.push(record.content.title);
+                }
 
                 // HACK: we fix up the geopose entries of records that still use the old GeoPose standard.
                 record.content.geopose = upgradeGeoPoseStandard(record.content.geopose);
@@ -598,11 +644,11 @@
                             const contentType = record.content.refs[0].contentType;
                             const url = record.content.refs[0].url;
                             if (contentType.includes('gltf')) {
-                                const node = tdEngine.addModel(url, localPosition, localQuaternion);
+                                const nodeTransform = tdEngine.addModel(url, localPosition, localQuaternion).transform;
                                 if (content_definitions['animation'] != undefined) {
                                     switch (content_definitions['animation']) {
                                         case 'SPIN_UP':
-                                            tdEngine.setVerticallyRotating(node);
+                                            tdEngine.setVerticallyRotating(nodeTransform);
                                             break;
                                         default:
                                             break;
@@ -635,12 +681,13 @@
                     }
 
                     case 'geopose_stream': {
-                        // NGI Search 2025 demo
-                        if (record.tenant === 'NGISearch2025') {
-                            let object_description = (record.content as any).object_description;
+                        // NGI Search 2025 demo on agent pose sharing
+                        if (record.tenant === 'NGISearch2025' && $showOtherCameras) {
                             let globalObjectPose = record.content.geopose;
                             let localObjectPose = tdEngine.convertGeoPoseToLocalPose(globalObjectPose);
                             let object_id = record.content.id;
+
+                            let object_description = (record.content as any).object_description;
                             if (tdEngine.getDynamicObjectMesh(object_id) != null) {
                                 tdEngine.updateDynamicObject(object_id, localObjectPose.position, localObjectPose.quaternion, object_description);
                             } else {
@@ -739,8 +786,11 @@
                                         quaternion: { x: 0, y: 0, z: 0, w: 1 },
                                     };
                                     const localFeaturePose = tdEngine.convertGeoPoseToLocalPose(featureGeopose);
-                                    const pinModel = tdEngine.addModel('/media/models/map_pin.glb', localFeaturePose.position, localFeaturePose.quaternion, new Vec3(2, 2, 2));
-                                    tdEngine.setVerticallyRotating(pinModel);
+                                    const nodeTransform = tdEngine.addModel('/media/models/map_pin.glb', localFeaturePose.position, localFeaturePose.quaternion, new Vec3(2, 2, 2), (pinModel) => {
+                                        //tdEngine.setVerticallyRotating(pinModel.parent!); // TODO: why does this not work?
+                                        console.log('POI ' + featureName + ' added.');
+                                    }).transform;
+                                    tdEngine.setVerticallyRotating(nodeTransform);
 
                                     let localTextPosition = localFeaturePose.position.clone();
                                     localTextPosition.y += 3;
