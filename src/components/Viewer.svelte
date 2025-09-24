@@ -310,17 +310,18 @@
         }, 5000);
     }
 
-    async function retrieveAndPlaceContents(queryGeoPose: Geopose | undefined) {
-        if ($recentLocalisation.geopose?.position !== undefined) {
-            console.log('Looking for contents in H3 cell');
-            if (!queryGeoPose) {
-                console.log('No Geopose');
-                console.log(queryGeoPose);
-                return;
-            }
-            const h3Indices = getClosestH3Cells(queryGeoPose.position.lat, queryGeoPose.position.lon);
-            for (const h3Index of h3Indices) {
-                // skip already loaded h3 indices
+async function retrieveAndPlaceContents(queryGeoPose: Geopose | undefined) {
+        console.log('retrieveAndPlaceContents');
+
+        if (!queryGeoPose) {
+            console.warn('No geopose available yet, cannot query contents');
+            return;
+        }
+        const h3Indices = getClosestH3Cells(queryGeoPose.position.lat, queryGeoPose.position.lon);
+        for (const h3Index of h3Indices) {
+            // skip already loaded h3 indices
+            // NOTE: disable to support dynamically created contents
+            if (loadedH3Indices.includes(h3Index)) {
                 continue;
             } else {
                 loadedH3Indices.push(h3Index);
