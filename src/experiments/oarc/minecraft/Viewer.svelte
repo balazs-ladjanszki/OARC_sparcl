@@ -87,7 +87,24 @@
 
         startSession();
         initializeBlocks();
-        //intervalId = setInterval(() => getPoints(reticle), 500);
+        intervalId = setInterval(() => getPoints(reticle), 500);
+        /*let globalpose = {
+                position: {
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                    },
+                quaternion: {
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                    w: 1,
+                    },
+                };
+        models.push(tdEngine.addDynamicObject("1", globalpose.position, globalpose.quaternion));
+        models.push(tdEngine.addDynamicObject("2", globalpose.position, globalpose.quaternion));
+        models.push(tdEngine.addDynamicObject("3", globalpose.position, globalpose.quaternion));
+        models.push(tdEngine.addDynamicObject("4", globalpose.position, globalpose.quaternion));*/
     }
 
     /**
@@ -141,7 +158,6 @@
                 $parentState.showFooter = ($settings.showstats || ($settings.localisation && !$parentState.isLocalisationDone)) as boolean;
                 if (reticle === null) {
                     reticle = tdEngine.addReticle();
-                    //intervalId = setInterval(() => getPoints(reticle), 500);
                 }
                 const reticlePose = hitTestResults[0].getPose(floorSpaceReference);
                 const position = reticlePose?.transform.position;
@@ -336,8 +352,6 @@
             },
         };
 
-        console.log(geoPose);
-
         const ref = {
             contentType: 'model/gltf-binary',
             url: url,
@@ -430,7 +444,6 @@
             const data = events.object_created;
             //if (data.sender != $peerIdStr) { // ignore own messages which are also delivered
             const scr = data.scr;
-            console.log(scr);
             if (scr && 'tenant' in scr && scr.tenant === 'minecraft_experiment') {
                 console.log(scr);
                 //console.log(scr.content.geoPose.position.lat, "got the data through peertopeer");
@@ -460,6 +473,7 @@
         const latitude = globalObjectPose.position.lat;
         const longitude = globalObjectPose.position.lon;
 
+
         let key = S2.latLngToKey(latitude, longitude, S2_LEVEL);
         let id = S2.keyToId(key);
         if (id != previousID) {
@@ -468,13 +482,13 @@
             let cellLatitude = latlng.lat;
             let cellLongitude = latlng.lng;
 
-            if (models.length > 0) {
+            /*if (models.length > 0) {
                 models.forEach(function (element) {
                     tdEngine.remove(element);
                 });
             }
 
-            models = [];
+            models = []*/
 
             const url = 'https://esoptron.hu:8042/getPoints?lat=' + cellLatitude + '&lon=' + cellLongitude + '&lvl=24';
 
@@ -506,6 +520,8 @@
                             };
 
                             let points = [v0, v1, v2, v3];
+                            let localposes: Transform[] = [];
+                            let globalPoses = [];
 
                             points.forEach(function (element) {
                                 let quat = toQuaternion(-1 * element.lon);
@@ -525,10 +541,26 @@
                                 };
 
                                 const localpose = tdEngine.convertGeoPoseToLocalPose(globalpose);
-
-                                let model = tdEngine.addModel(chosenBlock.getUrl(), localpose.position, localpose.quaternion, new Vec3(0.1, 0.1, 0.1));
-                                models.push(model);
+                                localposes.push(localpose);
+                                globalPoses.push(globalpose);
+                                if (models.length < 4) {
+                                    let model = tdEngine.addModel(chosenBlock.getUrl(), localpose.position, localpose.quaternion, new Vec3(0.1, 0.1, 0.1)).transform;
+                                    models.push(model);
+                                }
                             });
+                            if (models.length > 0) {
+                                let i = 0;
+                                models.forEach(function (element) {
+                                    const localpose = tdEngine.convertGeoPoseToLocalPose(globalPoses[i]);
+                                    element.position = localpose.position;
+                                    element.quaternion = localpose.quaternion;
+                                    i++;
+                                });
+                            }
+
+                            /*for(let i = 0; i < models.length;i++){
+                                tdEngine.updateDynamicObject(i.toString(), localposes[i].position, localposes[i].quaternion);
+                            }*/
                         })
                         .catch((error) => {
                             console.error('Error:', error);
